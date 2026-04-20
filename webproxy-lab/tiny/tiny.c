@@ -65,20 +65,19 @@ void doit(int fd)
 
   if (strcasecmp(method, "GET"))
   {
-    //  clienterror();  // TODO: implement clienterror function which flush error message with socket
+    clienterror(fd, method, "501", "Not implemented", "Tiny does not implement this method");
     return;
   }
 
   // empty rio internal buffer, it's not essential but conventinal
   // we don't need to reuse connfd, so empty rio buffer later than GET if statement
-  // TODO: implement read_requesthdrs
   read_requesthdrs(&rio);
 
   // parse uri to detemine whether static request, filename, cgiargs
   is_static = parse_uri(uri, filename, cgiargs);
   if (stat(filename, &sbuffer) < 0)
   {
-    // clienterror(); // TODO: implement clienterror function which flush error message with socket
+    clienterror(fd, filename, "404", "Not found", "Tiny couldn't find this file");
     return;
   }
 
@@ -87,19 +86,19 @@ void doit(int fd)
   {
     if (!(S_ISREG(sbuffer.st_mode)) || !(S_IRUSR & sbuffer.st_mode))
     {
-      // clienterror(); // TODO: implement clienterror function which flush error message with socket
+      clienterror(fd, filename, "403", "Forbidden", "Tiny couldn't read the file");
       return;
     }
-    serve_static(fd, filename, sbuffer.st_size); // TODO: implement serve_static
+    serve_static(fd, filename, sbuffer.st_size);
   }
   else
   {
     if (!(S_ISREG(sbuffer.st_mode)) || !(S_IXUSR & sbuffer.st_mode))
     {
-      // clienterror(); // TODO: implement clienterror function which flush error message with socket
+      clienterror(fd, filename, "403", "Forbidden", "Tiny couldn't run the CGI program.");
       return;
     }
-    serve_dynamic(fd, filename, cgiargs); // TODO: implement serve_dynamic
+    serve_dynamic(fd, filename, cgiargs);
   }
 }
 
