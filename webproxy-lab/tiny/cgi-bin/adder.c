@@ -34,7 +34,12 @@ int main(void)
   printf("Content-type: text/html\r\n");
   printf("Content-length: %d\r\n", (int)strlen(content));
   printf("\r\n");
-  printf("%s", content);
+
+  buf = getenv("REQUEST_METHOD");
+  if (strcmp(buf, "HEAD") != 0)
+  {
+    printf("%s", content);
+  }
   fflush(stdout);
 
   exit(0);

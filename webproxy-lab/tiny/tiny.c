@@ -11,9 +11,9 @@
 void doit(int fd);
 void read_requesthdrs(rio_t *rp);
 int parse_uri(char *uri, char *filename, char *cgiargs);
-void serve_static(int fd, char *filename, int filesize);
+void serve_static(int fd, char *filename, int filesize, int send_body);
 void get_filetype(char *filename, char *filetype);
-void serve_dynamic(int fd, char *filename, char *cgiargs);
+void serve_dynamic(int fd, char *filename, char *cgiargs, int send_body);
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg,
                  char *longmsg);
 
@@ -51,6 +51,7 @@ void doit(int fd)
 
   rio_t rio;
   int is_static;
+  int send_body; // determine whether print body or not
   struct stat sbuffer;
   char buffer[MAXLINE];
   char method[16]; // any method length is not longher than 6.
@@ -67,6 +68,16 @@ void doit(int fd)
   {
     clienterror(fd, method, "501", "Not implemented", "Tiny does not implement this method");
     return;
+  }
+
+  // if method is head, don't print body
+  if (!strcasecmp(method, "HEAD"))
+  {
+    send_body = 0;
+  }
+  else
+  {
+    send_body = 1;
   }
 
   // empty rio internal buffer, it's not essential but conventinal
@@ -89,7 +100,7 @@ void doit(int fd)
       clienterror(fd, filename, "403", "Forbidden", "Tiny couldn't read the file");
       return;
     }
-    serve_static(fd, filename, sbuffer.st_size);
+    serve_static(fd, filename, sbuffer.st_size, send_body);
   }
   else
   {
@@ -98,7 +109,7 @@ void doit(int fd)
       clienterror(fd, filename, "403", "Forbidden", "Tiny couldn't run the CGI program.");
       return;
     }
-    serve_dynamic(fd, filename, cgiargs);
+    serve_dynamic(fd, filename, cgiargs, send_body);
   }
 }
 
@@ -171,7 +182,7 @@ void get_filetype(char *filename, char *filetype)
   return;
 }
 
-void serve_static(int fd, char *filename, int filesize)
+void serve_static(int fd, char *filename, int filesize, int send_body)
 {
   int srcfd;
   char *srcp;
@@ -188,24 +199,26 @@ void serve_static(int fd, char *filename, int filesize)
   Rio_writen(fd, buffer, strlen(buffer));
 
   // reponse body
+  if (send_body)
+  {
+    // 1. mmap
+    // srcfd = Open(filename, O_RDONLY, 0);
+    // srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
+    // Close(srcfd);
+    // Rio_writen(fd, srcp, filesize);
+    // Munmap(srcp, filesize);
 
-  // 1. mmap
-  // srcfd = Open(filename, O_RDONLY, 0);
-  // srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
-  // Close(srcfd);
-  // Rio_writen(fd, srcp, filesize);
-  // Munmap(srcp, filesize);
-
-  // 2. malloc
-  srcfd = Open(filename, O_RDONLY, 0);
-  srcp = malloc((size_t)filesize);
-  Rio_readn(srcfd, srcp, filesize);
-  Close(srcfd);
-  Rio_writen(fd, srcp, filesize);
-  Free(srcp);
+    // 2. malloc
+    srcfd = Open(filename, O_RDONLY, 0);
+    srcp = malloc((size_t)filesize);
+    Rio_readn(srcfd, srcp, filesize);
+    Close(srcfd);
+    Rio_writen(fd, srcp, filesize);
+    Free(srcp);
+  }
 }
 
-void serve_dynamic(int fd, char *filename, char *cgiargs)
+void serve_dynamic(int fd, char *filename, char *cgiargs, int send_body)
 {
   char buffer[MAXBUF];
   char *emptylist[] = {NULL};
@@ -219,6 +232,15 @@ void serve_dynamic(int fd, char *filename, char *cgiargs)
   if (Fork() == 0)
   {
     setenv("QUERY_STRING", cgiargs, 1);
+    if (!send_body)
+    {
+      setenv("REQUEST_METHOD", "HEAD", 1);
+    }
+    else
+    {
+      setenv("REQUEST_METHOD", "GET", 1);
+    }
+
     Dup2(fd, STDOUT_FILENO);
     Execve(filename, emptylist, environ);
   }
