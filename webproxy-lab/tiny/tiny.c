@@ -173,7 +173,7 @@ void serve_static(int fd, char *filename, int filesize)
   int srcfd;
   char *srcp;
   char filetype[MAXLINE];
-  char buffer[MAXLINE];
+  char buffer[MAXBUF];
 
   // reponse header
   get_filetype(filename, filetype);
@@ -189,7 +189,7 @@ void serve_static(int fd, char *filename, int filesize)
   srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
   Close(srcfd);
   Rio_writen(fd, srcp, filesize);
-  munmap(srcp, filesize);
+  Munmap(srcp, filesize);
 }
 
 // TODO: implement
