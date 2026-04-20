@@ -192,6 +192,25 @@ void serve_static(int fd, char *filename, int filesize)
   Munmap(srcp, filesize);
 }
 
+void serve_dynamic(int fd, char *filename, char *cgiargs)
+{
+  char buffer[MAXBUF];
+  char *emptylist[] = {NULL};
+
+  // response
+  sprintf(buffer, "HTTP/1.0 200 OK\r\n");
+  sprintf(buffer, "%sServer: Tiny Web Server\r\n", buffer);
+  Rio_writen(fd, buffer, strlen(buffer));
+
+  // CGI
+  if (Fork() == 0)
+  {
+    setenv("QUERY_STRING", cgiargs, 1);
+    Dup2(fd, STDOUT_FILENO);
+    Execve(filename, emptylist, environ);
+  }
+  Wait(NULL);
+}
+
 // TODO: implement
 // int parse_uri(char *uri, char *filename, char *cgiargs);
-// void serve_dynamic(int fd, char *filename, char *cgiargs);
