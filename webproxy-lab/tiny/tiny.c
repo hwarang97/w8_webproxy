@@ -141,8 +141,34 @@ void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longms
   Rio_writen(fd, body, strlen(body));
 }
 
+void get_filetype(char *filename, char *filetype)
+{
+  // return file MIME type
+  if (strstr(filename, ".html"))
+  {
+    strcpy(filetype, "text/html");
+  }
+  else if (strstr(filename, ".gif"))
+  {
+    strcpy(filetype, "image/gif");
+  }
+  else if (strstr(filename, ".png"))
+  {
+    strcpy(filetype, "image/png");
+  }
+  else if (strstr(filename, ".jpg"))
+  {
+    strcpy(filetype, "image/jpeg");
+  }
+  else
+  {
+    strcpy(filetype, "text/plain");
+  }
+
+  return;
+}
+
 // TODO: implement
 // int parse_uri(char *uri, char *filename, char *cgiargs);
 // void serve_static(int fd, char *filename, int filesize);
-// void get_filetype(char *filename, char *filetype);
 // void serve_dynamic(int fd, char *filename, char *cgiargs);
