@@ -103,6 +103,19 @@ void doit(int fd)
   }
 }
 
+void read_requesthdrs(rio_t *rp)
+{
+  char buffer[MAXLINE];
+
+  Rio_readlineb(rp, buffer, MAXLINE);
+  while ((strcmp(buffer, "\r\n")))
+  {
+    Rio_readlineb(rp, buffer, MAXLINE);
+    printf("%s", buffer);
+  }
+  return;
+}
+
 // TODO: implement
 // void read_requesthdrs(rio_t *rp);
 // int parse_uri(char *uri, char *filename, char *cgiargs);
