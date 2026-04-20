@@ -168,7 +168,30 @@ void get_filetype(char *filename, char *filetype)
   return;
 }
 
+void serve_static(int fd, char *filename, int filesize)
+{
+  int srcfd;
+  char *srcp;
+  char filetype[MAXLINE];
+  char buffer[MAXLINE];
+
+  // reponse header
+  get_filetype(filename, filetype);
+  sprintf(buffer, "HTTP/1.0 200 OK\r\n");
+  sprintf(buffer, "%sServer: Tiny Web Server\r\n", buffer);
+  sprintf(buffer, "%sConnection: close\r\n", buffer);
+  sprintf(buffer, "%sContent-length: %d\r\n", buffer, filesize);
+  sprintf(buffer, "%sContent-type: %s\r\n\r\n", buffer, filetype);
+  Rio_writen(fd, buffer, strlen(buffer));
+
+  // reponse body
+  srcfd = Open(filename, O_RDONLY, 0);
+  srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
+  Close(srcfd);
+  Rio_writen(fd, srcp, filesize);
+  munmap(srcp, filesize);
+}
+
 // TODO: implement
 // int parse_uri(char *uri, char *filename, char *cgiargs);
-// void serve_static(int fd, char *filename, int filesize);
 // void serve_dynamic(int fd, char *filename, char *cgiargs);
