@@ -110,7 +110,7 @@ void read_requesthdrs(rio_t *rp)
   while ((strcmp(buffer, "\r\n")))
   {
     Rio_readlineb(rp, buffer, MAXLINE);
-    printf("%s", buffer);
+    // printf("%s", buffer);
   }
   return;
 }
@@ -188,11 +188,21 @@ void serve_static(int fd, char *filename, int filesize)
   Rio_writen(fd, buffer, strlen(buffer));
 
   // reponse body
+
+  // 1. mmap
+  // srcfd = Open(filename, O_RDONLY, 0);
+  // srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
+  // Close(srcfd);
+  // Rio_writen(fd, srcp, filesize);
+  // Munmap(srcp, filesize);
+
+  // 2. malloc
   srcfd = Open(filename, O_RDONLY, 0);
-  srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
+  srcp = malloc((size_t)filesize);
+  Rio_readn(srcfd, srcp, filesize);
   Close(srcfd);
   Rio_writen(fd, srcp, filesize);
-  Munmap(srcp, filesize);
+  Free(srcp);
 }
 
 void serve_dynamic(int fd, char *filename, char *cgiargs)
