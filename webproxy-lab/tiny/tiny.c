@@ -63,7 +63,7 @@ void doit(int fd)
   Rio_readlineb(&rio, buffer, MAXLINE);
   sscanf(buffer, "%s %s %s", method, uri, version);
 
-  if (strcasecmp(method, "GET"))
+  if (strcasecmp(method, "GET") && strcasecmp(method, "HEAD"))
   {
     clienterror(fd, method, "501", "Not implemented", "Tiny does not implement this method");
     return;
@@ -110,7 +110,7 @@ void read_requesthdrs(rio_t *rp)
   while ((strcmp(buffer, "\r\n")))
   {
     Rio_readlineb(rp, buffer, MAXLINE);
-    // printf("%s", buffer);
+    printf("%s", buffer);
   }
   return;
 }
