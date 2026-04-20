@@ -116,11 +116,33 @@ void read_requesthdrs(rio_t *rp)
   return;
 }
 
+void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg)
+{
+  char body[MAXLINE];
+  char buffer[MAXLINE];
+
+  // http response body
+  sprintf(body, "<html><title>Tiny Error</title>");
+  sprintf(body, "%s<body bgcolor="
+                "ffffff"
+                ">\r\n",
+          body);
+  sprintf(body, "%s%s: %s\r\n", body, errnum, shortmsg);
+  sprintf(body, "%s<p>%s: %s\r\n", body, longmsg, cause);
+  sprintf(body, "%s<hr><em>The Tiny Web server</em>\r\n", body);
+
+  // print http response (header + body)
+  sprintf(buffer, "HTTP/1.0 %s %s\r\n", errnum, shortmsg);
+  Rio_writen(fd, buffer, strlen(buffer));
+  sprintf(buffer, "Content-type: text/html\r\n");
+  Rio_writen(fd, buffer, strlen(buffer));
+  sprintf(buffer, "Content-length: %d\r\n\r\n", (int)strlen(body));
+  Rio_writen(fd, buffer, strlen(buffer));
+  Rio_writen(fd, body, strlen(body));
+}
+
 // TODO: implement
-// void read_requesthdrs(rio_t *rp);
 // int parse_uri(char *uri, char *filename, char *cgiargs);
 // void serve_static(int fd, char *filename, int filesize);
 // void get_filetype(char *filename, char *filetype);
 // void serve_dynamic(int fd, char *filename, char *cgiargs);
-// void clienterror(int fd, char *cause, char *errnum, char *shortmsg,
-//                  char *longmsg);
