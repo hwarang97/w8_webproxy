@@ -5,6 +5,11 @@
 #define MAX_CACHE_SIZE 1049000
 #define MAX_OBJECT_SIZE 102400
 
+void doit(int fd);
+void read_requesthdrs(rio_t *rp);
+void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);
+int parse_uri(int fd, const char *uri, char *hostname, char *port, char *path);
+
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr =
     "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 "
@@ -41,9 +46,147 @@ int main(int argc, char **argv)
     Getnameinfo((SA *)&clientaddr, clientlen, client_hostname, MAXLINE,
                 client_port, MAXLINE, 0);
     printf("Connected to (%s, %s)\n", client_hostname, client_port);
-    echo(connfd);
     Close(connfd);
   }
   // printf("%s", user_agent_hdr);
   exit(0);
+}
+
+void doit(int fd)
+{
+  rio_t rio;
+  char *buffer[MAXBUF];
+  char *method;
+  char *uri;
+  char *version;
+  char *hostname;
+  char *port;
+  char *path;
+
+  Rio_readinitb(&rio, fd);
+  Rio_readlineb(&rio, buffer, MAXLINE);
+
+  // extract method, uri, version
+  sscanf(buffer, "%s %s %s", method, uri, version);
+
+  if (strcasecmp(method, "GET"))
+  {
+    clienterror(fd, method, "501", "Not implemented", "Tiny does not implement this method");
+    return;
+  }
+
+  // extract hostname, port, path
+  parse_uri(uri, hostname, port, path);
+
+  if (hostname == "")
+  {
+    clienterror(fd, uri, "400", "Bad Request", "Proxy could not parse the request URI");
+    return;
+  }
+
+  // emtpy socket
+  read_requesthdrs(&rio);
+}
+
+void read_requesthdrs(rio_t *rp)
+{
+  char buffer[MAXLINE];
+
+  Rio_readlineb(rp, buffer, MAXLINE);
+  while ((strcmp(buffer, "\r\n")))
+  {
+    Rio_readlineb(rp, buffer, MAXLINE);
+    printf("%s", buffer);
+  }
+  return;
+}
+
+void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg)
+{
+  char body[MAXLINE];
+  char buffer[MAXLINE];
+
+  // http response body
+  sprintf(body, "<html><title>Tiny Error</title>");
+  sprintf(body, "%s<body bgcolor="
+                "ffffff"
+                ">\r\n",
+          body);
+  sprintf(body, "%s%s: %s\r\n", body, errnum, shortmsg);
+  sprintf(body, "%s<p>%s: %s\r\n", body, longmsg, cause);
+  sprintf(body, "%s<hr><em>The Tiny Web server</em>\r\n", body);
+
+  // print http response (header + body)
+  sprintf(buffer, "HTTP/1.0 %s %s\r\n", errnum, shortmsg);
+  Rio_writen(fd, buffer, strlen(buffer));
+  sprintf(buffer, "Content-type: text/html\r\n");
+  Rio_writen(fd, buffer, strlen(buffer));
+  sprintf(buffer, "Content-length: %d\r\n\r\n", (int)strlen(body));
+  Rio_writen(fd, buffer, strlen(buffer));
+  Rio_writen(fd, body, strlen(body));
+}
+
+int parse_uri(int fd, const char *uri, char *hostname, char *port, char *path)
+{
+  char *path_begin = NULL;
+  char *colon = NULL;
+  char buffer[MAXLINE];
+  char *domain = buffer;
+
+  strcpy(buffer, uri);
+
+  if (strncmp(buffer, "http://", 7) != 0)
+  {
+    clienterror(fd, uri, "400", "Bad Request", "Invalid URI");
+    return -1;
+  }
+  domain = domain + 7;
+
+  // get path
+  path_begin = strchr(domain, '/');
+  if (path_begin == NULL)
+  {
+    strcpy(path, "/");
+  }
+  else
+  {
+    strcpy(path, path_begin);
+    *path_begin = '\0';
+  }
+
+  // get port
+  colon = strchr(domain, ':');
+  if ((colon == NULL))
+  {
+    strcpy(port, "80");
+  }
+  else
+  {
+    // there is :, but no port number
+    if (*(colon + 1) == '\0')
+    {
+      clienterror(fd, uri, "400", "Bad Request", "Invalid URI");
+      return -1;
+    }
+
+    // valid case
+    else
+    {
+      *colon = '\0';
+      colon += 1;
+      strcpy(port, colon);
+    }
+  }
+
+  // get hostname
+  if (*domain == '\0')
+  {
+    clienterror(fd, uri, "400", "Bad Request", "Invalid URI");
+    return -1;
+  }
+  else
+  {
+    strcpy(hostname, domain);
+  }
+  return 0;
 }
