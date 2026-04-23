@@ -76,9 +76,7 @@ void doit(int fd)
   }
 
   // extract hostname, port, path
-  parse_uri(uri, hostname, port, path);
-
-  if (hostname == "")
+  if (parse_uri(fd, uri, hostname, port, path) < 0)
   {
     clienterror(fd, uri, "400", "Bad Request", "Proxy could not parse the request URI");
     return;
@@ -128,16 +126,16 @@ void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longms
 
 int parse_uri(int fd, const char *uri, char *hostname, char *port, char *path)
 {
-  char *path_begin = NULL;
-  char *colon = NULL;
   char buffer[MAXLINE];
   char *domain = buffer;
+  char *path_begin = NULL;
+  char *colon = NULL;
+  char *port_ptr = NULL;
 
   strcpy(buffer, uri);
 
   if (strncmp(buffer, "http://", 7) != 0)
   {
-    clienterror(fd, uri, "400", "Bad Request", "Invalid URI");
     return -1;
   }
   domain = domain + 7;
@@ -165,7 +163,6 @@ int parse_uri(int fd, const char *uri, char *hostname, char *port, char *path)
     // there is :, but no port number
     if (*(colon + 1) == '\0')
     {
-      clienterror(fd, uri, "400", "Bad Request", "Invalid URI");
       return -1;
     }
 
@@ -178,10 +175,20 @@ int parse_uri(int fd, const char *uri, char *hostname, char *port, char *path)
     }
   }
 
+  // port is consisted of number
+  port_ptr = port;
+  while (*port_ptr != '\0')
+  {
+    if (!isdigit((unsigned char)*port_ptr))
+    {
+      return -1;
+    }
+    port_ptr++;
+  }
+
   // get hostname
   if (*domain == '\0')
   {
-    clienterror(fd, uri, "400", "Bad Request", "Invalid URI");
     return -1;
   }
   else
