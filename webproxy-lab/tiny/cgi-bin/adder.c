@@ -19,7 +19,7 @@ int main(void)
     strcpy(arg2, p + 1);
     n1 = atoi(strchr(arg1, '=') + 1);
     n2 = atoi(strchr(arg2, '=') + 1);
-    *p = '&';
+    *p = '&'; // 이게 없다면, path가 중간에 짤리게 된다.
   }
 
   /* Make the response body */

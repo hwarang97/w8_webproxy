@@ -6,9 +6,13 @@
 #define MAX_OBJECT_SIZE 102400
 
 void doit(int fd);
-void read_requesthdrs(rio_t *rp);
+void read_requesthdrs(rio_t *rp, char *host_hdr, size_t host_hdr_size,
+                      char *other_hdrs, size_t other_hdrs_size);
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);
 int parse_uri(const char *uri, char *hostname, char *port, char *path);
+int build_request(char *request, size_t request_size,
+                  const char *hostname, const char *port, const char *path,
+                  const char *host_hdr, const char *other_hdrs);
 
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr =
@@ -46,6 +50,8 @@ int main(int argc, char **argv)
     Getnameinfo((SA *)&clientaddr, clientlen, client_hostname, MAXLINE,
                 client_port, MAXLINE, 0);
     printf("Connected to (%s, %s)\n", client_hostname, client_port);
+    /* 연결 하나를 받아서 프록시 로직을 수행한다. */
+    doit(connfd);
     Close(connfd);
   }
   // printf("%s", user_agent_hdr);
@@ -55,6 +61,7 @@ int main(int argc, char **argv)
 void doit(int fd)
 {
   rio_t rio;
+  rio_t server_rio;
   char buffer[MAXLINE];
   char method[MAXLINE];
   char uri[MAXLINE];
@@ -62,6 +69,12 @@ void doit(int fd)
   char hostname[MAXLINE];
   char port[MAXLINE];
   char path[MAXLINE];
+  char host_hdr[MAXLINE];
+  char other_hdrs[MAXBUF];
+  char request[MAXBUF];
+  char response_buf[MAXBUF];
+  int serverfd;
+  ssize_t n;
 
   Rio_readinitb(&rio, fd);
   Rio_readlineb(&rio, buffer, MAXLINE);
@@ -82,29 +95,99 @@ void doit(int fd)
     return;
   }
 
-  // emtpy socket
-  read_requesthdrs(&rio);
+  // 브라우저가 보낸 나머지 헤더들을 읽어서 분류한다.
+  // Host는 따로 저장하고, 나머지 전달할 헤더는 other_hdrs에 모아둔다.
+  read_requesthdrs(&rio, host_hdr, sizeof(host_hdr), other_hdrs, sizeof(other_hdrs));
 
-  // build resqeust
+  /*
+   * tiny 서버로 보낼 "완성된 HTTP 요청 문자열"을 만든다.
+   * request line + Host + User-Agent + Connection 계열 + 기타 헤더 순서로 합친다.
+   */
+  if (build_request(request, sizeof(request),
+                    hostname, port, path, host_hdr, other_hdrs) < 0)
+  {
+    clienterror(fd, uri, "500", "Internal Server Error",
+                "Proxy could not build the request");
+    return;
+  }
 
-  // build socket and connect with tinyserver
+  /*
+   * 이제 tiny 서버와 실제 TCP 연결을 맺는다.
+   * 여기서 실패하면 프록시는 브라우저에게 에러 응답을 돌려준다.
+   */
+  serverfd = open_clientfd(hostname, port);
+  if (serverfd < 0)
+  {
+    clienterror(fd, hostname, "502", "Bad Gateway",
+                "Proxy could not connect to the end server");
+    return;
+  }
 
-  // pass response to client
+  /*
+   * 위에서 만든 HTTP 요청 문자열을 tiny 서버로 전송한다.
+   * 이 순간부터 프록시는 "클라이언트 대신 tiny에게 요청을 보내는 역할"을 하게 된다.
+   */
+  Rio_writen(serverfd, request, strlen(request));
 
-  // close socket
+  /*
+   * tiny 서버 응답은 텍스트일 수도 있고 이미지 같은 바이너리일 수도 있다.
+   * 따라서 줄 단위가 아니라 "바이트 그대로" 읽어서 클라이언트로 전달한다.
+   */
+  Rio_readinitb(&server_rio, serverfd);
+  while ((n = Rio_readnb(&server_rio, response_buf, sizeof(response_buf))) > 0)
+  {
+    Rio_writen(fd, response_buf, n);
+  }
+
+  /* tiny 서버와의 연결은 이번 요청이 끝났으므로 닫는다. */
+  Close(serverfd);
 }
 
-void read_requesthdrs(rio_t *rp)
+void read_requesthdrs(rio_t *rp, char *host_hdr, size_t host_hdr_size,
+                      char *other_hdrs, size_t other_hdrs_size)
 {
   char buffer[MAXLINE];
 
-  Rio_readlineb(rp, buffer, MAXLINE);
-  while ((strcmp(buffer, "\r\n")))
+  /* 헤더가 하나도 없는 경우를 대비해 출력 버퍼를 먼저 비운다. */
+  host_hdr[0] = '\0';
+  other_hdrs[0] = '\0';
+
+  while (Rio_readlineb(rp, buffer, MAXLINE) > 0)
   {
-    Rio_readlineb(rp, buffer, MAXLINE);
-    printf("%s", buffer);
+    /* 빈 줄을 만나면 요청 헤더가 끝난 것이다. */
+    if (!strcmp(buffer, "\r\n"))
+    {
+      break;
+    }
+
+    /* Host 헤더는 따로 저장해 두었다가 나중에 그대로 재사용한다. */
+    if (!strncasecmp(buffer, "Host:", 5))
+    {
+      snprintf(host_hdr, host_hdr_size, "%s", buffer);
+      continue;
+    }
+
+    /*
+     * 아래 세 헤더는 프록시가 직접 다시 만들어서 보낼 것이므로
+     * 브라우저가 보낸 값은 버린다.
+     */
+    if (!strncasecmp(buffer, "Connection:", 11) ||
+        !strncasecmp(buffer, "Proxy-Connection:", 17) ||
+        !strncasecmp(buffer, "User-Agent:", 11))
+    {
+      continue;
+    }
+
+    /*
+     * 그 외의 헤더는 tiny 서버로 그대로 전달할 수 있도록
+     * other_hdrs 버퍼 뒤에 차곡차곡 붙여 둔다.
+     */
+    if (strlen(other_hdrs) + strlen(buffer) < other_hdrs_size)
+    {
+      strncat(other_hdrs, buffer,
+              other_hdrs_size - strlen(other_hdrs) - 1);
+    }
   }
-  return;
 }
 
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg)
@@ -203,5 +286,67 @@ int parse_uri(const char *uri, char *hostname, char *port, char *path)
   {
     strcpy(hostname, domain);
   }
+  return 0;
+}
+
+int build_request(char *request, size_t request_size,
+                  const char *hostname, const char *port, const char *path,
+                  const char *host_hdr, const char *other_hdrs)
+{
+  char generated_host_hdr[MAXLINE];
+  const char *final_host_hdr;
+  int written;
+
+  /*
+   * 브라우저가 Host 헤더를 보냈다면 그 값을 그대로 사용한다.
+   * 없었다면 parse_uri 결과를 바탕으로 Host 헤더를 직접 만든다.
+   */
+  if (host_hdr[0] != '\0')
+  {
+    final_host_hdr = host_hdr;
+  }
+  else
+  {
+    if (!strcmp(port, "80"))
+    {
+      snprintf(generated_host_hdr, sizeof(generated_host_hdr),
+               "Host: %s\r\n", hostname);
+    }
+    else
+    {
+      snprintf(generated_host_hdr, sizeof(generated_host_hdr),
+               "Host: %s:%s\r\n", hostname, port);
+    }
+    final_host_hdr = generated_host_hdr;
+  }
+
+  /*
+   * 프록시가 tiny 서버로 보낼 최종 요청 형식:
+   * 1. GET /path HTTP/1.0
+   * 2. Host
+   * 3. User-Agent
+   * 4. Connection: close
+   * 5. Proxy-Connection: close
+   * 6. 브라우저가 보낸 기타 헤더
+   * 7. 마지막 빈 줄
+   */
+  written = snprintf(request, request_size,
+                     "GET %s HTTP/1.0\r\n"
+                     "%s"
+                     "%s"
+                     "Connection: close\r\n"
+                     "Proxy-Connection: close\r\n"
+                     "%s"
+                     "\r\n",
+                     path,
+                     final_host_hdr,
+                     user_agent_hdr,
+                     other_hdrs);
+
+  if (written < 0 || (size_t)written >= request_size)
+  {
+    return -1;
+  }
+
   return 0;
 }
