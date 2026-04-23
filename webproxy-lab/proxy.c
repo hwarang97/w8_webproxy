@@ -6,6 +6,7 @@
 #define MAX_OBJECT_SIZE 102400
 
 void doit(int fd);
+void *thread(void *vargp);
 void read_requesthdrs(rio_t *rp, char *host_hdr, size_t host_hdr_size,
                       char *other_hdrs, size_t other_hdrs_size);
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);
@@ -30,7 +31,8 @@ int main(int argc, char **argv)
   // 연결 소켓 닫기
 
   int listenfd;
-  int connfd;
+  int *connfdp;
+  pthread_t tid;
   struct sockaddr_storage clientaddr;
   socklen_t clientlen;
   char client_hostname[MAXLINE];
@@ -45,17 +47,39 @@ int main(int argc, char **argv)
   listenfd = Open_listenfd(argv[1]);
   while (1)
   {
+    /*
+     * 각 연결마다 별도의 connfd 저장 공간을 만들고,
+     * 그 주소를 새 스레드에 넘겨서 경합 없이 처리한다.
+     */
+    connfdp = Malloc(sizeof(int));
     clientlen = sizeof(struct sockaddr_storage);
-    connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen);
+    *connfdp = Accept(listenfd, (SA *)&clientaddr, &clientlen);
     Getnameinfo((SA *)&clientaddr, clientlen, client_hostname, MAXLINE,
                 client_port, MAXLINE, 0);
     printf("Connected to (%s, %s)\n", client_hostname, client_port);
-    /* 연결 하나를 받아서 프록시 로직을 수행한다. */
-    doit(connfd);
-    Close(connfd);
+    /*
+     * 메인 스레드는 일을 worker thread에게 넘긴 뒤
+     * 바로 다음 accept로 돌아가서 새 연결을 받을 수 있다.
+     */
+    Pthread_create(&tid, NULL, thread, connfdp);
   }
   // printf("%s", user_agent_hdr);
   exit(0);
+}
+
+void *thread(void *vargp)
+{
+  int connfd = *((int *)vargp);
+
+  /*
+   * 이 스레드는 작업이 끝나면 join 없이 자동으로 정리되도록 detached로 둔다.
+   */
+  Pthread_detach(Pthread_self());
+  Free(vargp);
+
+  doit(connfd);
+  Close(connfd);
+  return NULL;
 }
 
 void doit(int fd)
