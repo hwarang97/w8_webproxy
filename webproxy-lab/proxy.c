@@ -8,7 +8,7 @@
 void doit(int fd);
 void read_requesthdrs(rio_t *rp);
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);
-int parse_uri(int fd, const char *uri, char *hostname, char *port, char *path);
+int parse_uri(const char *uri, char *hostname, char *port, char *path);
 
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr =
@@ -55,13 +55,13 @@ int main(int argc, char **argv)
 void doit(int fd)
 {
   rio_t rio;
-  char *buffer[MAXBUF];
-  char *method;
-  char *uri;
-  char *version;
-  char *hostname;
-  char *port;
-  char *path;
+  char buffer[MAXLINE];
+  char method[MAXLINE];
+  char uri[MAXLINE];
+  char version[MAXLINE];
+  char hostname[MAXLINE];
+  char port[MAXLINE];
+  char path[MAXLINE];
 
   Rio_readinitb(&rio, fd);
   Rio_readlineb(&rio, buffer, MAXLINE);
@@ -76,7 +76,7 @@ void doit(int fd)
   }
 
   // extract hostname, port, path
-  if (parse_uri(fd, uri, hostname, port, path) < 0)
+  if (parse_uri(uri, hostname, port, path) < 0)
   {
     clienterror(fd, uri, "400", "Bad Request", "Proxy could not parse the request URI");
     return;
@@ -84,6 +84,14 @@ void doit(int fd)
 
   // emtpy socket
   read_requesthdrs(&rio);
+
+  // build resqeust
+
+  // build socket and connect with tinyserver
+
+  // pass response to client
+
+  // close socket
 }
 
 void read_requesthdrs(rio_t *rp)
@@ -124,7 +132,7 @@ void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longms
   Rio_writen(fd, body, strlen(body));
 }
 
-int parse_uri(int fd, const char *uri, char *hostname, char *port, char *path)
+int parse_uri(const char *uri, char *hostname, char *port, char *path)
 {
   char buffer[MAXLINE];
   char *domain = buffer;
